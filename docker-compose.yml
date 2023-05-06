@@ -1,0 +1,28 @@
+version: "3"
+services:
+
+  auth-service:
+    build: .
+    depends_on:
+      - authdb
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    networks:
+      - auth-serice-network
+    restart: unless-stopped
+
+  authdb:
+    image: postgres:latest
+    ports:
+      - "5432:5432"
+    networks:
+      - auth-serice-network
+    environment:
+      POSTGRES_DB: "authdb"
+      POSTGRES_USER: "authdbuser"
+      POSTGRES_PASSWORD: "authdbpassword"
+
+networks:
+  auth-serice-network:
