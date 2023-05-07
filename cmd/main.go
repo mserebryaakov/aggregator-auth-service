@@ -38,21 +38,24 @@ func main() {
 		Password: env.PgPassword,
 		DBName:   env.PgDbName,
 		SSLMode:  env.SSLMode,
+		TimeZone: env.TimeZone,
 	}
-	authPostgres, err := postgres.NewDB(postgresConfig)
+	authDb, err := postgres.ConnectionToDb(postgresConfig)
 	if err != nil {
-		log.Fatalf("failed to connection to db: %v", err)
+		log.Fatalf("failed connection to db: %v", err)
 	}
-	err = postgres.RunDBMigration(cfg.Server.MigratePath, postgresConfig)
-	if err != nil {
-		log.Fatalf("failed migrate: %v", err)
-	}
+	authDb.AutoMigrate(&auth.Role{}, &auth.User{})
+	authDb.Create(&auth.Role{Code: "admin"})
+	authDb.Create(&auth.Role{Code: "delivery"})
+	authDb.Create(&auth.Role{Code: "client"})
+	authDb.Create(&auth.Role{Code: "system"})
+	authDb.Create(&auth.User{Name: "supervisor"})
 
-	storage := auth.NewStorage(authPostgres)
+	storage := auth.NewStorage(authDb)
 
-	service := auth.NewService(storage, authLog)
+	service := auth.NewService(storage, authLog, env.JwtSecret)
 
-	handler := auth.NewHandler(service, authLog)
+	handler := auth.NewHandler(service, authLog, env.JwtSecret)
 
 	router := gin.New()
 

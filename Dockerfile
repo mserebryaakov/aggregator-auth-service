@@ -12,8 +12,6 @@ FROM alpine:latest
 
 COPY config/config.json /config/config.json
 
-COPY migrations ./migrations
-
 COPY --from=builder /app/main /main
 
 ENTRYPOINT ["/main"]

@@ -11,3 +11,9 @@
 - viper - конфигурация
 - logrus - логирование
 - godotenv - переменные окружения
+
+### Docker
+
+    docker build . -t auth-service:latest
+
+    docker run --env-file ./.env -p 8080:8080 auth-service:latest

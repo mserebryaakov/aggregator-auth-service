@@ -1,11 +1,20 @@
 package auth
 
+import "gorm.io/gorm"
+
 type User struct {
-	Id       string `json:"-"`
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	Name     string `json:"name" binding:"required"`
-	Surname  string `json:"surname" binding:"required"`
-	Address  string `json:"address" binding:"required"`
-	RoleId   string `json:"-"`
+	gorm.Model
+	Email    string `gorm:"unique"`
+	Password string
+	Name     string
+	Surname  string
+	Address  string
+	Blocked  bool
+	RoleID   *uint
+	Role     Role `gorm:"foreignKey:RoleID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
+}
+
+type Role struct {
+	gorm.Model
+	Code string `gorm:"unique"`
 }
