@@ -5,8 +5,7 @@ import (
 )
 
 type ServerConfig struct {
-	Port        string `mapstructure:"port"`
-	MigratePath string `mapstructure:"migratePath"`
+	Port string `mapstructure:"port"`
 }
 
 type Config struct {
