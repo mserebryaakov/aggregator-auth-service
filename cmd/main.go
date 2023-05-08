@@ -6,8 +6,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	_ "github.com/lib/pq"
-
 	"github.com/gin-gonic/gin"
 	"github.com/mserebryaakov/aggregator-auth-service/config"
 	"github.com/mserebryaakov/aggregator-auth-service/internal/auth"
