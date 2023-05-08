@@ -4,7 +4,6 @@ go 1.20
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.0.0
-	github.com/lib/pq v1.10.9
 	github.com/spf13/viper v1.15.0
 	golang.org/x/crypto v0.8.0
 	gorm.io/driver/postgres v1.5.0
