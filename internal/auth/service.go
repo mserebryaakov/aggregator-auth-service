@@ -9,11 +9,11 @@ import (
 )
 
 type AuthService interface {
-	CreateUser(*User) (uint, error)
-	UpdateUser(*User) error
-	LoginUser(email, password string) (string, error)
-	GetUserById(id uint) (*User, error)
-	SetRoleByCode(id uint, code string) error
+	CreateUser(user *User, schema string) (uint, error)
+	UpdateUser(user *User, schema string) error
+	LoginUser(email, password, schema string) (string, error)
+	GetUserById(id uint, schema string) (*User, error)
+	SetRoleByCode(id uint, code string, schema string) error
 }
 
 type authService struct {
@@ -30,8 +30,8 @@ func NewService(storage Storage, log *logrus.Entry, jwtSecret string) AuthServic
 	}
 }
 
-func (s *authService) GetUserById(id uint) (*User, error) {
-	user, err := s.storage.GetUserById(id)
+func (s *authService) GetUserById(id uint, schema string) (*User, error) {
+	user, err := s.storage.GetUserById(id, schema)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (s *authService) GetUserById(id uint) (*User, error) {
 	return user, nil
 }
 
-func (s *authService) CreateUser(user *User) (uint, error) {
+func (s *authService) CreateUser(user *User, schema string) (uint, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), 10)
 	if err != nil {
 		return 0, errFailedHashPassword
@@ -59,11 +59,11 @@ func (s *authService) CreateUser(user *User) (uint, error) {
 		RoleID:   user.RoleID,
 	}
 
-	return s.storage.CreateUser(&newUser)
+	return s.storage.CreateUser(&newUser, schema)
 }
 
-func (s *authService) UpdateUser(iuser *User) error {
-	user, err := s.storage.GetUserById(iuser.ID)
+func (s *authService) UpdateUser(user *User, schema string) error {
+	iuser, err := s.storage.GetUserById(user.ID, schema)
 	if err != nil {
 		return err
 	}
@@ -73,15 +73,15 @@ func (s *authService) UpdateUser(iuser *User) error {
 		return errFailedHashPassword
 	}
 
-	user.Email = iuser.Email
-	user.Password = string(hash)
-	user.Name = iuser.Name
-	user.Surname = iuser.Surname
-	user.Address = iuser.Address
-	user.Blocked = iuser.Blocked
-	user.RoleID = iuser.RoleID
+	iuser.Email = user.Email
+	iuser.Password = string(hash)
+	iuser.Name = user.Name
+	iuser.Surname = user.Surname
+	iuser.Address = user.Address
+	iuser.Blocked = user.Blocked
+	iuser.RoleID = user.RoleID
 
-	err = s.storage.UpdateUser(user)
+	err = s.storage.UpdateUser(iuser, schema)
 	if err != nil {
 		return err
 	}
@@ -89,8 +89,8 @@ func (s *authService) UpdateUser(iuser *User) error {
 	return nil
 }
 
-func (s *authService) LoginUser(email, password string) (string, error) {
-	user, err := s.storage.GetUserByEmail(email)
+func (s *authService) LoginUser(email, password, schema string) (string, error) {
+	user, err := s.storage.GetUserByEmail(email, schema)
 	if err != nil {
 		return "", err
 	}
@@ -123,8 +123,8 @@ func (s *authService) LoginUser(email, password string) (string, error) {
 	return tokenString, nil
 }
 
-func (s *authService) SetRoleByCode(id uint, code string) error {
-	user, err := s.storage.GetUserById(id)
+func (s *authService) SetRoleByCode(id uint, code, schema string) error {
+	user, err := s.storage.GetUserById(id, schema)
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (s *authService) SetRoleByCode(id uint, code string) error {
 		return errUserNotFound
 	}
 
-	role, err := s.storage.GetRoleByCode(code)
+	role, err := s.storage.GetRoleByCode(code, schema)
 	if err != nil {
 		return err
 	}
@@ -143,7 +143,7 @@ func (s *authService) SetRoleByCode(id uint, code string) error {
 	}
 
 	user.RoleID = &role.ID
-	err = s.storage.UpdateUser(user)
+	err = s.storage.UpdateUser(user, schema)
 	if err != nil {
 		return err
 	}

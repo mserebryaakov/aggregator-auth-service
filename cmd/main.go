@@ -12,6 +12,7 @@ import (
 	"github.com/mserebryaakov/aggregator-auth-service/pkg/httpserver"
 	"github.com/mserebryaakov/aggregator-auth-service/pkg/logger"
 	"github.com/mserebryaakov/aggregator-auth-service/pkg/postgres"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -38,18 +39,18 @@ func main() {
 		SSLMode:  env.SSLMode,
 		TimeZone: env.TimeZone,
 	}
-	authDb, err := postgres.ConnectionToDb(postgresConfig)
+	scp := postgres.NewSchemaConnectionPool(postgresConfig, log)
+	authDb, err := scp.GetConnectionPool("public")
 	if err != nil {
 		log.Fatalf("failed connection to db: %v", err)
 	}
-	authDb.AutoMigrate(&auth.Role{}, &auth.User{})
-	authDb.Create(&auth.Role{Code: "admin"})
-	authDb.Create(&auth.Role{Code: "delivery"})
-	authDb.Create(&auth.Role{Code: "client"})
-	authDb.Create(&auth.Role{Code: "system"})
-	authDb.Create(&auth.User{Name: "supervisor"})
 
-	storage := auth.NewStorage(authDb)
+	err = RunAuthMigration(authDb)
+	if err != nil {
+		log.Fatalf("migration error: %v", err)
+	}
+
+	storage := auth.NewStorage(scp)
 
 	service := auth.NewService(storage, authLog, env.JwtSecret)
 
@@ -76,4 +77,25 @@ func main() {
 	if err := server.Shutdown(context.Background()); err != nil {
 		log.Errorf("error occured on server shutting down: %v", err)
 	}
+}
+
+func RunAuthMigration(authDb *gorm.DB) error {
+	return authDb.Transaction(func(tx *gorm.DB) error {
+		migrator := tx.Migrator()
+
+		if !migrator.HasTable(&auth.Role{}) {
+			tx.AutoMigrate(&auth.Role{})
+			tx.Create(&auth.Role{Code: "admin"})
+			tx.Create(&auth.Role{Code: "delivery"})
+			tx.Create(&auth.Role{Code: "client"})
+			tx.Create(&auth.Role{Code: "system"})
+		}
+
+		if !migrator.HasTable(&auth.User{}) {
+			tx.AutoMigrate(&auth.User{})
+			tx.Create(&auth.User{Email: "supervisor@secret.secret", Password: "$2a$10$8C5upPPRN.ViUta6sLEi0OrmOOsskaQn49XsnYB/J4PxtTo3SSfp6"})
+		}
+
+		return nil
+	})
 }

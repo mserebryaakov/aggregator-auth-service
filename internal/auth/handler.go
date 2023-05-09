@@ -34,20 +34,31 @@ func NewHandler(authService AuthService, log *logrus.Entry, jwtSecret string) *a
 func (h *authHandler) Register(router *gin.Engine) {
 	auth := router.Group("/auth")
 	{
-		auth.POST(loginPath, h.login)
-		auth.POST(signUpPath, h.signup)
-		auth.GET(validatePath, h.validate)
+		auth.POST(loginPath, DomainMiddleware, h.login)
+		auth.POST(signUpPath, DomainMiddleware, h.signup)
+		auth.GET(validatePath, DomainMiddleware, h.validate)
 	}
 	user := router.Group("/user")
 	{
-		user.POST(userRolePath, h.setRole)
+		user.POST(userRolePath, DomainMiddleware, h.setRole)
+		user.POST("", DomainMiddleware, h.createUser)
+		user.PATCH("", DomainMiddleware, h.updateUser)
 	}
 
-	router.POST("/user", h.createUser)
-	router.PATCH("/user", h.updateUser)
+	init := router.Group("/init")
+	{
+		init.POST("/start", h.initstart)
+		init.POST("/rollback", h.initrollback)
+	}
 }
 
 func (h *authHandler) login(c *gin.Context) {
+	domain, err := h.getDomain(c)
+	if err != nil {
+		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	var body struct {
 		Email    string
 		Password string
@@ -58,7 +69,7 @@ func (h *authHandler) login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authService.LoginUser(body.Email, body.Password)
+	token, err := h.authService.LoginUser(body.Email, body.Password, domain)
 	if err != nil {
 		if err == errFailedPasswordOrEmail {
 			h.newErrorResponse(c, http.StatusBadRequest, "incorrect email or password")
@@ -75,6 +86,12 @@ func (h *authHandler) login(c *gin.Context) {
 }
 
 func (h *authHandler) signup(c *gin.Context) {
+	domain, err := h.getDomain(c)
+	if err != nil {
+		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	var body struct {
 		Email    string
 		Password string
@@ -86,7 +103,7 @@ func (h *authHandler) signup(c *gin.Context) {
 	}
 
 	var adminRole uint = 1
-	id, err := h.authService.CreateUser(&User{Email: body.Email, Password: body.Password, RoleID: &adminRole})
+	id, err := h.authService.CreateUser(&User{Email: body.Email, Password: body.Password, RoleID: &adminRole}, domain)
 	if err != nil {
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
@@ -98,6 +115,12 @@ func (h *authHandler) signup(c *gin.Context) {
 }
 
 func (h *authHandler) validate(c *gin.Context) {
+	domain, err := h.getDomain(c)
+	if err != nil {
+		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	tokenString := c.Request.Header.Get("Authorization")
 
 	if tokenString == "" {
@@ -125,7 +148,7 @@ func (h *authHandler) validate(c *gin.Context) {
 		if !ok {
 			c.AbortWithStatus(http.StatusUnauthorized)
 		}
-		user, err := h.authService.GetUserById(uint(userId))
+		user, err := h.authService.GetUserById(uint(userId), domain)
 		if err != nil {
 			c.AbortWithStatus(http.StatusUnauthorized)
 		}
@@ -137,6 +160,12 @@ func (h *authHandler) validate(c *gin.Context) {
 }
 
 func (h *authHandler) setRole(c *gin.Context) {
+	domain, err := h.getDomain(c)
+	if err != nil {
+		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	var body struct {
 		Id   uint
 		Role string
@@ -147,7 +176,7 @@ func (h *authHandler) setRole(c *gin.Context) {
 		return
 	}
 
-	err := h.authService.SetRoleByCode(body.Id, body.Role)
+	err = h.authService.SetRoleByCode(body.Id, body.Role, domain)
 	if err != nil {
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
@@ -157,6 +186,12 @@ func (h *authHandler) setRole(c *gin.Context) {
 }
 
 func (h *authHandler) createUser(c *gin.Context) {
+	domain, err := h.getDomain(c)
+	if err != nil {
+		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	var body User = User{}
 
 	if c.Bind(&body) != nil {
@@ -164,7 +199,7 @@ func (h *authHandler) createUser(c *gin.Context) {
 		return
 	}
 
-	id, err := h.authService.CreateUser(&body)
+	id, err := h.authService.CreateUser(&body, domain)
 	if err != nil {
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
@@ -176,6 +211,12 @@ func (h *authHandler) createUser(c *gin.Context) {
 }
 
 func (h *authHandler) updateUser(c *gin.Context) {
+	domain, err := h.getDomain(c)
+	if err != nil {
+		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	var body User = User{}
 
 	if c.Bind(&body) != nil {
@@ -183,12 +224,20 @@ func (h *authHandler) updateUser(c *gin.Context) {
 		return
 	}
 
-	err := h.authService.UpdateUser(&body)
+	err = h.authService.UpdateUser(&body, domain)
 	if err != nil {
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	c.JSON(http.StatusOK, gin.H{})
+}
+
+func (h *authHandler) initstart(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{})
+}
+
+func (h *authHandler) initrollback(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{})
 }
 
@@ -201,4 +250,18 @@ func (h *authHandler) newErrorResponse(c *gin.Context, statusCode int, message s
 	c.AbortWithStatusJSON(statusCode, &response{
 		Message: message,
 	})
+}
+
+func (h *authHandler) getDomain(c *gin.Context) (string, error) {
+	domain, exists := c.Get("domain")
+	if exists {
+		domainStr, ok := domain.(string)
+		if ok {
+			return domainStr, nil
+		} else {
+			return "", fmt.Errorf("incorrect domain type - %v", domain)
+		}
+	} else {
+		return "", fmt.Errorf("domain not found")
+	}
 }
