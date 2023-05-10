@@ -3,6 +3,7 @@ package auth
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -34,21 +35,21 @@ func NewHandler(authService AuthService, log *logrus.Entry, jwtSecret string) *a
 func (h *authHandler) Register(router *gin.Engine) {
 	auth := router.Group("/auth")
 	{
-		auth.POST(loginPath, DomainMiddleware, h.login)
-		auth.POST(signUpPath, DomainMiddleware, h.signup)
-		auth.GET(validatePath, DomainMiddleware, h.validate)
+		auth.POST(loginPath, h.domainMiddleware, h.login)
+		auth.POST(signUpPath, h.domainMiddleware, h.signup)
+		auth.GET(validatePath, h.domainMiddleware, h.authMiddleware, h.validate)
 	}
 	user := router.Group("/user")
 	{
-		user.POST(userRolePath, DomainMiddleware, h.setRole)
-		user.POST("", DomainMiddleware, h.createUser)
-		user.PATCH("", DomainMiddleware, h.updateUser)
+		user.POST(userRolePath, h.domainMiddleware, h.authMiddleware, h.setRole)
+		user.POST("", h.domainMiddleware, h.authMiddleware, h.createUser)
+		user.PATCH("", h.domainMiddleware, h.authMiddleware, h.updateUser)
 	}
 
 	init := router.Group("/init")
 	{
 		init.POST("/start", h.initstart)
-		init.POST("/rollback", h.initrollback)
+		init.POST("/rollback", h.authMiddleware, h.initrollback)
 	}
 }
 
@@ -125,6 +126,7 @@ func (h *authHandler) validate(c *gin.Context) {
 
 	if tokenString == "" {
 		c.AbortWithStatus(http.StatusUnauthorized)
+		return
 	}
 
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
@@ -137,25 +139,30 @@ func (h *authHandler) validate(c *gin.Context) {
 	if err != nil {
 		h.log.Debugf("error jwt parse token: %v", err)
 		c.AbortWithStatus(http.StatusUnauthorized)
+		return
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 		if float64(time.Now().Unix()) > claims["exp"].(float64) {
 			c.AbortWithStatus(http.StatusUnauthorized)
+			return
 		}
 
 		userId, ok := claims["sub"].(float64)
 		if !ok {
 			c.AbortWithStatus(http.StatusUnauthorized)
+			return
 		}
 		user, err := h.authService.GetUserById(uint(userId), domain)
 		if err != nil {
 			c.AbortWithStatus(http.StatusUnauthorized)
+			return
 		}
 
 		c.JSON(http.StatusOK, user)
 	} else {
 		c.AbortWithStatus(http.StatusUnauthorized)
+		return
 	}
 }
 
@@ -201,6 +208,10 @@ func (h *authHandler) createUser(c *gin.Context) {
 
 	id, err := h.authService.CreateUser(&body, domain)
 	if err != nil {
+		if err == errUserWithEmailAlreadyExists {
+			h.newErrorResponse(c, http.StatusConflict, err.Error())
+			return
+		}
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -234,10 +245,73 @@ func (h *authHandler) updateUser(c *gin.Context) {
 }
 
 func (h *authHandler) initstart(c *gin.Context) {
+	domain := c.Query("domain")
+	if domain == "" {
+		h.newErrorResponse(c, http.StatusBadRequest, "missing query parameter (domain)")
+		return
+	}
+
+	_, err := h.authService.GetAreaByDomain(domain)
+	if err != nil {
+		if err != errAreaNotFound {
+			h.log.Errorf("initstart: fatal error get area - %s, by domain - %s", err, domain)
+			h.newErrorResponse(c, http.StatusBadRequest, "failed get domain")
+			return
+		}
+	} else {
+		h.newErrorResponse(c, http.StatusBadRequest, "domain alreay exists")
+		return
+	}
+
+	_, err = h.authService.CreateArea(domain)
+	if err != nil {
+		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	err = h.authService.CreateSchema(domain)
+	if err != nil {
+		h.authService.DeleteArea(domain)
+		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{})
 }
 
 func (h *authHandler) initrollback(c *gin.Context) {
+	domain := c.Query("domain")
+	if domain == "" {
+		h.newErrorResponse(c, http.StatusBadRequest, "missing query parameter (domain)")
+		return
+	}
+
+	_, err := h.authService.GetAreaByDomain(domain)
+	if err != nil {
+		if err != errAreaNotFound {
+			h.log.Errorf("initrollback: fatal error get area - %s, by domain - %s", err, domain)
+			h.newErrorResponse(c, http.StatusInternalServerError, "failed get area by domain")
+			return
+		} else {
+			h.newErrorResponse(c, http.StatusNotFound, "domain not found")
+			return
+		}
+	}
+
+	err = h.authService.DeleteSchema(domain)
+	if err != nil {
+		h.log.Errorf("initrollback: fatal error delete schema - %s", err)
+		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	err = h.authService.DeleteArea(domain)
+	if err != nil {
+		h.log.Errorf("initrollback: fatal error delete area - %s", err)
+		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{})
 }
 
@@ -263,5 +337,82 @@ func (h *authHandler) getDomain(c *gin.Context) (string, error) {
 		}
 	} else {
 		return "", fmt.Errorf("domain not found")
+	}
+}
+
+func (h *authHandler) domainMiddleware(c *gin.Context) {
+	host := c.Request.Host
+
+	var shopDomain string
+	if strings.Contains(host, ".") {
+		arr := strings.Split(host, ".")
+		if len(arr) == 2 {
+			shopDomain = strings.Split(host, ".")[0]
+		} else {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+	} else {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	_, err := h.authService.GetAreaByDomain(shopDomain)
+	if err != nil {
+		if err == errAreaNotFound {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		} else {
+			h.log.Errorf("domainMiddleware: failed GetAreaByDomain - %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+	}
+
+	fmt.Printf("request with domain - %s", shopDomain)
+	c.Set("domain", shopDomain)
+
+	c.Next()
+}
+
+func (h *authHandler) authMiddleware(c *gin.Context) {
+	tokenString := c.Request.Header.Get("Authorization")
+
+	if tokenString == "" {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+
+		return []byte(h.jwtSecret), nil
+	})
+	if err != nil {
+		h.log.Debugf("error jwt parse token: %v", err)
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		if float64(time.Now().Unix()) > claims["exp"].(float64) {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		userId, ok := claims["sub"].(float64)
+		if !ok {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		c.Set("userId", userId)
+
+		c.Next()
+	} else {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
 	}
 }

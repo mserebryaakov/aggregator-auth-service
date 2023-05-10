@@ -14,6 +14,11 @@ type AuthService interface {
 	LoginUser(email, password, schema string) (string, error)
 	GetUserById(id uint, schema string) (*User, error)
 	SetRoleByCode(id uint, code string, schema string) error
+	GetAreaByDomain(domain string) (*Area, error)
+	CreateArea(domain string) (uint, error)
+	DeleteArea(domain string) error
+	CreateSchema(domain string) error
+	DeleteSchema(domain string) error
 }
 
 type authService struct {
@@ -36,7 +41,7 @@ func (s *authService) GetUserById(id uint, schema string) (*User, error) {
 		return nil, err
 	}
 
-	if user.ID == 0 {
+	if user == nil {
 		return nil, errUserNotFound
 	}
 
@@ -44,6 +49,14 @@ func (s *authService) GetUserById(id uint, schema string) (*User, error) {
 }
 
 func (s *authService) CreateUser(user *User, schema string) (uint, error) {
+	tuser, err := s.storage.GetUserByEmail(user.Email, schema)
+	if err != nil {
+		return 0, err
+	}
+	if tuser != nil {
+		return 0, errUserWithEmailAlreadyExists
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), 10)
 	if err != nil {
 		return 0, errFailedHashPassword
@@ -66,6 +79,10 @@ func (s *authService) UpdateUser(user *User, schema string) error {
 	iuser, err := s.storage.GetUserById(user.ID, schema)
 	if err != nil {
 		return err
+	}
+
+	if iuser == nil {
+		return errUserNotFound
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), 10)
@@ -95,7 +112,7 @@ func (s *authService) LoginUser(email, password, schema string) (string, error) 
 		return "", err
 	}
 
-	if user.ID == 0 {
+	if user == nil {
 		return "", errFailedPasswordOrEmail
 	}
 
@@ -129,7 +146,7 @@ func (s *authService) SetRoleByCode(id uint, code, schema string) error {
 		return err
 	}
 
-	if user.ID == 0 {
+	if user == nil {
 		return errUserNotFound
 	}
 
@@ -138,7 +155,7 @@ func (s *authService) SetRoleByCode(id uint, code, schema string) error {
 		return err
 	}
 
-	if role.ID == 0 {
+	if role == nil {
 		return errRoleNotFound
 	}
 
@@ -149,4 +166,37 @@ func (s *authService) SetRoleByCode(id uint, code, schema string) error {
 	}
 
 	return nil
+}
+
+func (s *authService) GetAreaByDomain(domain string) (*Area, error) {
+	area, err := s.storage.GetAreaByDomain(domain)
+	if err != nil {
+		return nil, err
+	}
+
+	if area == nil {
+		return nil, errAreaNotFound
+	}
+
+	return area, nil
+}
+
+func (s *authService) CreateArea(domain string) (uint, error) {
+	newArea := Area{
+		Domain: domain,
+	}
+
+	return s.storage.CreateArea(&newArea)
+}
+
+func (s *authService) CreateSchema(domain string) error {
+	return s.storage.CreateSchema(domain)
+}
+
+func (s *authService) DeleteArea(domain string) error {
+	return s.storage.DeleteArea(domain)
+}
+
+func (s *authService) DeleteSchema(domain string) error {
+	return s.storage.DeleteSchema(domain)
 }
