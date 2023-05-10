@@ -41,15 +41,15 @@ func (h *authHandler) Register(router *gin.Engine) {
 	}
 	user := router.Group("/user")
 	{
-		user.POST(userRolePath, h.domainMiddleware, h.authMiddleware, h.setRole)
-		user.POST("", h.domainMiddleware, h.authMiddleware, h.createUser)
-		user.PATCH("", h.domainMiddleware, h.authMiddleware, h.updateUser)
+		user.POST(userRolePath, h.domainMiddleware, h.authMiddleware, h.systemAndAdminRole, h.setRole)
+		user.POST("", h.domainMiddleware, h.authMiddleware, h.systemAndAdminRole, h.createUser)
+		user.PATCH("", h.domainMiddleware, h.authMiddleware, h.systemAndAdminRole, h.updateUser)
 	}
 
 	init := router.Group("/init")
 	{
-		init.POST("/start", h.initstart)
-		init.POST("/rollback", h.authMiddleware, h.initrollback)
+		init.POST("/start", h.authMiddleware, h.systemRole, h.initstart)
+		init.POST("/rollback", h.authMiddleware, h.systemRole, h.initrollback)
 	}
 }
 
@@ -153,6 +153,13 @@ func (h *authHandler) validate(c *gin.Context) {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
+
+		_, ok = claims["role"].(string)
+		if !ok {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
 		user, err := h.authService.GetUserById(uint(userId), domain)
 		if err != nil {
 			c.AbortWithStatus(http.StatusUnauthorized)
@@ -340,6 +347,20 @@ func (h *authHandler) getDomain(c *gin.Context) (string, error) {
 	}
 }
 
+func (h *authHandler) getRole(c *gin.Context) (string, error) {
+	role, exists := c.Get("role")
+	if exists {
+		roleStr, ok := role.(string)
+		if ok {
+			return roleStr, nil
+		} else {
+			return "", fmt.Errorf("incorrect role type - %v", role)
+		}
+	} else {
+		return "", fmt.Errorf("role not found")
+	}
+}
+
 func (h *authHandler) domainMiddleware(c *gin.Context) {
 	host := c.Request.Host
 
@@ -408,11 +429,50 @@ func (h *authHandler) authMiddleware(c *gin.Context) {
 			return
 		}
 
+		userRole, ok := claims["role"].(string)
+		if !ok {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
 		c.Set("userId", userId)
+		c.Set("userRole", userRole)
 
 		c.Next()
 	} else {
 		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+}
+
+func (h *authHandler) systemAndAdminRole(c *gin.Context) {
+	role, err := h.getRole(c)
+	if err != nil {
+		h.log.Errorf("missing role in jwt - %v", role)
+		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if role == "system" || role == "admin" {
+		c.Next()
+	} else {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+}
+
+func (h *authHandler) systemRole(c *gin.Context) {
+	role, err := h.getRole(c)
+	if err != nil {
+		h.log.Errorf("missing role in jwt - %v", role)
+		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if role == "system" {
+		c.Next()
+	} else {
+		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
 }

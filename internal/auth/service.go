@@ -129,7 +129,7 @@ func (s *authService) LoginUser(email, password, schema string) (string, error) 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub":  user.ID,
 		"exp":  time.Now().Add(time.Hour * 24 * 30).Unix(),
-		"role": roleId,
+		"role": roleMap[roleId],
 	})
 
 	tokenString, err := token.SignedString([]byte(s.jwtSecret))
