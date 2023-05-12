@@ -122,7 +122,13 @@ func (h *authHandler) validate(c *gin.Context) {
 		return
 	}
 
-	tokenString := c.Request.Header.Get("Authorization")
+	role := c.Query("role")
+	if role == "" {
+		h.newErrorResponse(c, http.StatusBadRequest, "missing query parameter (role)")
+		return
+	}
+
+	tokenString := c.Request.Header.Get("X-System-Token")
 
 	if tokenString == "" {
 		c.AbortWithStatus(http.StatusUnauthorized)
@@ -148,25 +154,25 @@ func (h *authHandler) validate(c *gin.Context) {
 			return
 		}
 
-		userId, ok := claims["sub"].(float64)
+		_, ok := claims["sub"].(float64)
 		if !ok {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		_, ok = claims["role"].(string)
-		if !ok {
+		irole, ok := claims["role"].(string)
+		if !ok || irole != role {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+
+		idomain, ok := claims["domain"].(string)
+		if !ok || domain != idomain {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		user, err := h.authService.GetUserById(uint(userId), domain)
-		if err != nil {
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		c.JSON(http.StatusOK, user)
+		c.JSON(http.StatusOK, gin.H{})
 	} else {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
@@ -397,6 +403,12 @@ func (h *authHandler) domainMiddleware(c *gin.Context) {
 }
 
 func (h *authHandler) authMiddleware(c *gin.Context) {
+	domain, err := h.getDomain(c)
+	if err != nil {
+		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	tokenString := c.Request.Header.Get("Authorization")
 
 	if tokenString == "" {
@@ -431,6 +443,12 @@ func (h *authHandler) authMiddleware(c *gin.Context) {
 
 		userRole, ok := claims["role"].(string)
 		if !ok {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		idomain, ok := claims["domain"].(string)
+		if !ok || idomain != domain {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
