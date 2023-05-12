@@ -23,5 +23,19 @@ func RunSchemaMigration(db *gorm.DB) error {
 }
 
 func RunAuthMigration(db *gorm.DB) error {
-	return db.AutoMigrate(&Area{})
+	err := RunSchemaMigration(db)
+	if err != nil {
+		return err
+	}
+
+	migrator := db.Migrator()
+	if !migrator.HasTable(&Area{}) {
+		err = db.AutoMigrate(&Area{})
+		if err != nil {
+			return err
+		}
+		db.Create(&Area{Domain: "public"})
+	}
+
+	return nil
 }

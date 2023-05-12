@@ -122,9 +122,12 @@ func (h *authHandler) validate(c *gin.Context) {
 		return
 	}
 
-	role := c.Query("role")
-	if role == "" {
-		h.newErrorResponse(c, http.StatusBadRequest, "missing query parameter (role)")
+	var body struct {
+		Role []string
+	}
+
+	if c.Bind(&body) != nil {
+		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
 
@@ -161,7 +164,19 @@ func (h *authHandler) validate(c *gin.Context) {
 		}
 
 		irole, ok := claims["role"].(string)
-		if !ok || irole != role {
+		found := false
+		for _, str := range body.Role {
+			if str == irole {
+				found = true
+				break
+			}
+		}
+
+		if len(body.Role) == 0 {
+			found = true
+		}
+
+		if !ok || !found {
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}
