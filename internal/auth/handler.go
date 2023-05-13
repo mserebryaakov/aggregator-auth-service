@@ -51,9 +51,19 @@ func (h *authHandler) Register(router *gin.Engine) {
 		init.POST("/start", h.authMiddleware, h.systemRole, h.initstart)
 		init.POST("/rollback", h.authMiddleware, h.systemRole, h.initrollback)
 	}
+	system := router.Group("/system")
+	{
+		sestemAuthSub := system.Group("/auth")
+		{
+			sestemAuthSub.GET(validatePath, h.systemDomainMiddleware, h.authMiddleware, h.validate)
+			sestemAuthSub.POST(loginPath, h.systemDomainMiddleware, h.login)
+		}
+	}
 }
 
 func (h *authHandler) login(c *gin.Context) {
+	h.log.Debugf("login hadnler start")
+
 	domain, err := h.getDomain(c)
 	if err != nil {
 		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
@@ -61,8 +71,8 @@ func (h *authHandler) login(c *gin.Context) {
 	}
 
 	var body struct {
-		Email    string
-		Password string
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	if c.Bind(&body) != nil {
@@ -87,6 +97,8 @@ func (h *authHandler) login(c *gin.Context) {
 }
 
 func (h *authHandler) signup(c *gin.Context) {
+	h.log.Debugf("login hadnler signup")
+
 	domain, err := h.getDomain(c)
 	if err != nil {
 		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
@@ -94,8 +106,8 @@ func (h *authHandler) signup(c *gin.Context) {
 	}
 
 	var body struct {
-		Email    string
-		Password string
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	if c.Bind(&body) != nil {
@@ -116,14 +128,10 @@ func (h *authHandler) signup(c *gin.Context) {
 }
 
 func (h *authHandler) validate(c *gin.Context) {
-	domain, err := h.getDomain(c)
-	if err != nil {
-		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
-		return
-	}
+	h.log.Debugf("login hadnler validate")
 
 	var body struct {
-		Role []string
+		Role []string `json:"role"`
 	}
 
 	if c.Bind(&body) != nil {
@@ -181,8 +189,14 @@ func (h *authHandler) validate(c *gin.Context) {
 			return
 		}
 
+		domain, err := h.getDomain(c)
+		if err != nil && irole != "system" {
+			h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		idomain, ok := claims["domain"].(string)
-		if !ok || domain != idomain {
+		if !ok || (domain != idomain && irole != "system") {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
@@ -195,6 +209,8 @@ func (h *authHandler) validate(c *gin.Context) {
 }
 
 func (h *authHandler) setRole(c *gin.Context) {
+	h.log.Debugf("login hadnler setRole")
+
 	domain, err := h.getDomain(c)
 	if err != nil {
 		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
@@ -202,8 +218,8 @@ func (h *authHandler) setRole(c *gin.Context) {
 	}
 
 	var body struct {
-		Id   uint
-		Role string
+		Id   uint   `json:"id"`
+		Role string `json:"role"`
 	}
 
 	if c.Bind(&body) != nil {
@@ -221,6 +237,8 @@ func (h *authHandler) setRole(c *gin.Context) {
 }
 
 func (h *authHandler) createUser(c *gin.Context) {
+	h.log.Debugf("login hadnler createUser")
+
 	domain, err := h.getDomain(c)
 	if err != nil {
 		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
@@ -250,6 +268,8 @@ func (h *authHandler) createUser(c *gin.Context) {
 }
 
 func (h *authHandler) updateUser(c *gin.Context) {
+	h.log.Debugf("login hadnler updateUser")
+
 	domain, err := h.getDomain(c)
 	if err != nil {
 		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
@@ -273,8 +293,11 @@ func (h *authHandler) updateUser(c *gin.Context) {
 }
 
 func (h *authHandler) initstart(c *gin.Context) {
+	h.log.Debugf("login hadnler initstart")
+
 	domain := c.Query("domain")
 	if domain == "" {
+		h.log.Errorf("initstart: missing query parameter (domain)")
 		h.newErrorResponse(c, http.StatusBadRequest, "missing query parameter (domain)")
 		return
 	}
@@ -287,12 +310,14 @@ func (h *authHandler) initstart(c *gin.Context) {
 			return
 		}
 	} else {
+		h.log.Errorf("initstart: domain alreay exists - %s", domain)
 		h.newErrorResponse(c, http.StatusBadRequest, "domain alreay exists")
 		return
 	}
 
 	_, err = h.authService.CreateArea(domain)
 	if err != nil {
+		h.log.Errorf("initstart: create area err - %v", err)
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -308,6 +333,8 @@ func (h *authHandler) initstart(c *gin.Context) {
 }
 
 func (h *authHandler) initrollback(c *gin.Context) {
+	h.log.Debugf("login hadnler initrollback")
+
 	domain := c.Query("domain")
 	if domain == "" {
 		h.newErrorResponse(c, http.StatusBadRequest, "missing query parameter (domain)")
@@ -369,7 +396,7 @@ func (h *authHandler) getDomain(c *gin.Context) (string, error) {
 }
 
 func (h *authHandler) getRole(c *gin.Context) (string, error) {
-	role, exists := c.Get("role")
+	role, exists := c.Get("userRole")
 	if exists {
 		roleStr, ok := role.(string)
 		if ok {
@@ -383,6 +410,8 @@ func (h *authHandler) getRole(c *gin.Context) (string, error) {
 }
 
 func (h *authHandler) domainMiddleware(c *gin.Context) {
+	h.log.Debugf("domainMiddleware start")
+
 	host := c.Request.Host
 
 	var shopDomain string
@@ -418,13 +447,11 @@ func (h *authHandler) domainMiddleware(c *gin.Context) {
 }
 
 func (h *authHandler) authMiddleware(c *gin.Context) {
-	domain, err := h.getDomain(c)
-	if err != nil {
-		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
-		return
-	}
+	h.log.Debugf("authMiddleware start")
 
 	tokenString := c.Request.Header.Get("Authorization")
+
+	h.log.Debugf("authMiddleware Authorization Header - %s", tokenString)
 
 	if tokenString == "" {
 		c.AbortWithStatus(http.StatusUnauthorized)
@@ -452,20 +479,31 @@ func (h *authHandler) authMiddleware(c *gin.Context) {
 
 		userId, ok := claims["sub"].(float64)
 		if !ok {
+			h.log.Debugf("authMiddleware Authorization Token Sub error - %s", tokenString)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
 		userRole, ok := claims["role"].(string)
 		if !ok {
+			h.log.Debugf("authMiddleware Authorization Token UserRole error - %s", tokenString)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		idomain, ok := claims["domain"].(string)
-		if !ok || idomain != domain {
-			c.AbortWithStatus(http.StatusUnauthorized)
+		domain, err := h.getDomain(c)
+		if err != nil && userRole != "system" {
+			h.log.Debugf("authMiddleware get domain err and userrole != system")
+			h.newErrorResponse(c, http.StatusBadRequest, err.Error())
 			return
+		}
+
+		idomain, ok := claims["domain"].(string)
+		if userRole != "system" {
+			if !ok || idomain != domain {
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
 		}
 
 		c.Set("userId", userId)
@@ -479,6 +517,8 @@ func (h *authHandler) authMiddleware(c *gin.Context) {
 }
 
 func (h *authHandler) systemAndAdminRole(c *gin.Context) {
+	h.log.Debugf("systemAndAdminRole start")
+
 	role, err := h.getRole(c)
 	if err != nil {
 		h.log.Errorf("missing role in jwt - %v", role)
@@ -495,6 +535,8 @@ func (h *authHandler) systemAndAdminRole(c *gin.Context) {
 }
 
 func (h *authHandler) systemRole(c *gin.Context) {
+	h.log.Debugf("systemRole start")
+
 	role, err := h.getRole(c)
 	if err != nil {
 		h.log.Errorf("missing role in jwt - %v", role)
@@ -508,4 +550,31 @@ func (h *authHandler) systemRole(c *gin.Context) {
 		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
+}
+
+func (h *authHandler) systemDomainMiddleware(c *gin.Context) {
+	h.log.Debugf("systemDomainMiddleware start")
+
+	domain := c.Query("domain")
+	if domain == "" {
+		h.newErrorResponse(c, http.StatusBadRequest, "missing query parameter (domain)")
+		return
+	}
+
+	_, err := h.authService.GetAreaByDomain(domain)
+	if err != nil {
+		if err == errAreaNotFound {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		} else {
+			h.log.Errorf("domainMiddleware: failed GetAreaByDomain - %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+	}
+
+	fmt.Printf("request with domain - %s", domain)
+	c.Set("domain", domain)
+
+	c.Next()
 }

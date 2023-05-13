@@ -124,6 +124,8 @@ func (s *authService) LoginUser(email, password, schema string) (string, error) 
 	var roleId uint = 0
 	if user.RoleID != nil {
 		roleId = *user.RoleID
+	} else {
+		return "", errRoleNotFound
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{

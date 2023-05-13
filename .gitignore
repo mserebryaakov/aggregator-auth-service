@@ -12,3 +12,4 @@ cmd/docs
 go.work
 .vscode
 build
+nginx.conf

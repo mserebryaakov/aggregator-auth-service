@@ -198,7 +198,7 @@ func (s *AuthStorage) DeleteArea(domain string) error {
 		return err
 	}
 
-	result := publicschema.Delete(&Area{}).Where("domain = ?", domain)
+	result := publicschema.Where("domain = ?", domain).Delete(&Area{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete area")
 	}

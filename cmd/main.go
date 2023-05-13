@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -38,6 +39,7 @@ func main() {
 		SSLMode:  env.SSLMode,
 		TimeZone: env.TimeZone,
 	}
+	fmt.Printf("CONFIG - %+v", postgresConfig)
 	scp := postgres.NewSchemaConnectionPool(postgresConfig, log)
 	authDb, err := scp.GetConnectionPool("public")
 	if err != nil {

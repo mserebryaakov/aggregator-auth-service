@@ -1,7 +1,7 @@
 version: "3"
 services:
 
-  auth-service:
+  authservice:
     build: .
     depends_on:
       - authdb
@@ -10,7 +10,7 @@ services:
     ports:
       - "8080:8080"
     networks:
-      - auth-serice-network
+      - aggregator-service-network
     restart: unless-stopped
 
   authdb:
@@ -18,11 +18,11 @@ services:
     ports:
       - "5432:5432"
     networks:
-      - auth-serice-network
+      - aggregator-service-network
     environment:
       POSTGRES_DB: "authdb"
       POSTGRES_USER: "authdbuser"
       POSTGRES_PASSWORD: "authdbpassword"
 
 networks:
-  auth-serice-network:
+  aggregator-service-network:
