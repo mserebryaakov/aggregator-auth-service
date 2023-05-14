@@ -37,7 +37,7 @@ func (h *authHandler) Register(router *gin.Engine) {
 	{
 		auth.POST(loginPath, h.domainMiddleware, h.login)
 		auth.POST(signUpPath, h.domainMiddleware, h.signup)
-		auth.GET(validatePath, h.domainMiddleware, h.authMiddleware, h.validate)
+		auth.POST(validatePath, h.domainMiddleware, h.authMiddleware, h.validate)
 	}
 	user := router.Group("/user")
 	{
@@ -55,7 +55,7 @@ func (h *authHandler) Register(router *gin.Engine) {
 	{
 		sestemAuthSub := system.Group("/auth")
 		{
-			sestemAuthSub.GET(validatePath, h.systemDomainMiddleware, h.authMiddleware, h.validate)
+			sestemAuthSub.POST(validatePath, h.systemDomainMiddleware, h.authMiddleware, h.validate)
 			sestemAuthSub.POST(loginPath, h.systemDomainMiddleware, h.login)
 		}
 	}
@@ -494,7 +494,7 @@ func (h *authHandler) authMiddleware(c *gin.Context) {
 		domain, err := h.getDomain(c)
 		if err != nil && userRole != "system" {
 			h.log.Debugf("authMiddleware get domain err and userrole != system")
-			h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+			h.newErrorResponse(c, http.StatusUnauthorized, err.Error())
 			return
 		}
 
