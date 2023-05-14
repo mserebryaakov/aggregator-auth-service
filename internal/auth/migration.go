@@ -17,7 +17,7 @@ func RunSchemaMigration(db *gorm.DB) error {
 
 	if !migrator.HasTable(&User{}) {
 		db.AutoMigrate(&User{})
-		db.Create(&User{Email: "supervisor@secret.secret", Password: "$2a$10$8C5upPPRN.ViUta6sLEi0OrmOOsskaQn49XsnYB/J4PxtTo3SSfp6", RoleID: &systemRole.ID})
+		db.Create(&User{Email: "supervisor@secret.secret", Password: "$2a$10$8C5upPPRN.ViUta6sLEi0OrmOOsskaQn49XsnYB/J4PxtTo3SSfp6", RoleID: &systemRole.ID, AddressesShopID: []uint{}})
 	}
 
 	return nil

@@ -9,14 +9,15 @@ type Area struct {
 
 type User struct {
 	gorm.Model
-	Email    string `gorm:"unique"`
-	Password string
-	Name     string
-	Surname  string
-	Address  string
-	Blocked  bool
-	RoleID   *uint
-	Role     Role `gorm:"foreignKey:RoleID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
+	Email           string `gorm:"unique"`
+	Password        string
+	Name            string
+	Surname         string
+	Address         string
+	AddressesShopID []uint `gorm:"type:integer[]"`
+	Blocked         bool
+	RoleID          *uint
+	Role            Role `gorm:"foreignKey:RoleID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
 }
 
 type Role struct {

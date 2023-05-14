@@ -115,8 +115,8 @@ func (h *authHandler) signup(c *gin.Context) {
 		return
 	}
 
-	var adminRole uint = 1
-	id, err := h.authService.CreateUser(&User{Email: body.Email, Password: body.Password, RoleID: &adminRole}, domain)
+	var clientRole uint = 3
+	id, err := h.authService.CreateUser(&User{Email: body.Email, Password: body.Password, RoleID: &clientRole}, domain)
 	if err != nil {
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
@@ -165,7 +165,7 @@ func (h *authHandler) validate(c *gin.Context) {
 			return
 		}
 
-		_, ok := claims["sub"].(float64)
+		userId, ok := claims["sub"].(float64)
 		if !ok {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
@@ -201,7 +201,9 @@ func (h *authHandler) validate(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{})
+		c.JSON(http.StatusOK, gin.H{
+			"userId": userId,
+		})
 	} else {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
@@ -295,6 +297,16 @@ func (h *authHandler) updateUser(c *gin.Context) {
 func (h *authHandler) initstart(c *gin.Context) {
 	h.log.Debugf("login hadnler initstart")
 
+	var body struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	if c.Bind(&body) != nil {
+		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
+		return
+	}
+
 	domain := c.Query("domain")
 	if domain == "" {
 		h.log.Errorf("initstart: missing query parameter (domain)")
@@ -326,6 +338,16 @@ func (h *authHandler) initstart(c *gin.Context) {
 	if err != nil {
 		h.authService.DeleteArea(domain)
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var adminRole uint = 1
+	admin := User{Email: body.Email, Password: body.Password, RoleID: &adminRole}
+	_, err = h.authService.CreateUser(&admin, domain)
+	if err != nil {
+		h.authService.DeleteArea(domain)
+		h.authService.DeleteSchema(domain)
+		h.newErrorResponse(c, http.StatusInternalServerError, "failed create admin user")
 		return
 	}
 
