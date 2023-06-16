@@ -45,12 +45,12 @@ func main() {
 		log.Fatalf("failed connection to db: %v", err)
 	}
 
-	err = auth.RunAuthServiceMigration(authDb)
+	err = auth.RunAuthServiceMigration(authDb, env.SupervisorPassword, env.SupervisorEmail)
 	if err != nil {
 		log.Fatalf("migration error: %v", err)
 	}
 
-	storage := auth.NewStorage(scp)
+	storage := auth.NewStorage(scp, env.SupervisorEmail, env.SupervisorPassword)
 
 	service := auth.NewService(storage, authLog, env.JwtSecret)
 

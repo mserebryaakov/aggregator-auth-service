@@ -1,8 +1,11 @@
 package auth
 
-import "gorm.io/gorm"
+import (
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+)
 
-func RunSchemaMigration(db *gorm.DB) error {
+func RunSchemaMigration(db *gorm.DB, password, email string) error {
 	migrator := db.Migrator()
 
 	systemRole := Role{Code: "system"}
@@ -15,11 +18,16 @@ func RunSchemaMigration(db *gorm.DB) error {
 		db.Create(&systemRole)
 	}
 
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 10)
+	if err != nil {
+		return errFailedHashPassword
+	}
+
 	if !migrator.HasTable(&User{}) {
 		db.AutoMigrate(&User{})
 		db.Create(&User{
-			Email:           "supervisor@secret.secret",
-			Password:        "$2a$10$8C5upPPRN.ViUta6sLEi0OrmOOsskaQn49XsnYB/J4PxtTo3SSfp6",
+			Email:           email,
+			Password:        string(hash),
 			RoleID:          &systemRole.ID,
 			AddressesShopID: []uint{},
 		})
@@ -28,7 +36,12 @@ func RunSchemaMigration(db *gorm.DB) error {
 	return nil
 }
 
-func RunAuthServiceMigration(db *gorm.DB) error {
+func RunAuthServiceMigration(db *gorm.DB, password, email string) error {
+	err := RunSchemaMigration(db, password, email)
+	if err != nil {
+		return err
+	}
+
 	migrator := db.Migrator()
 	if !migrator.HasTable(&Area{}) {
 		err := db.AutoMigrate(&Area{})

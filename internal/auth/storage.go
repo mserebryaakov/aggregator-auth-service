@@ -23,12 +23,16 @@ type Storage interface {
 }
 
 type AuthStorage struct {
-	scp *postgres.SchemaConnectionPool
+	scp                *postgres.SchemaConnectionPool
+	SupervisorEmail    string
+	SupervisorPassword string
 }
 
-func NewStorage(scp *postgres.SchemaConnectionPool) Storage {
+func NewStorage(scp *postgres.SchemaConnectionPool, supervisorEmail, supervisorPassword string) Storage {
 	return &AuthStorage{
-		scp: scp,
+		scp:                scp,
+		SupervisorEmail:    supervisorEmail,
+		SupervisorPassword: supervisorPassword,
 	}
 }
 
@@ -186,7 +190,7 @@ func (s *AuthStorage) CreateSchema(domain string) error {
 			return err
 		}
 
-		err = RunSchemaMigration(resschema)
+		err = RunSchemaMigration(resschema, s.SupervisorPassword, s.SupervisorEmail)
 		if err != nil {
 			return err
 		}

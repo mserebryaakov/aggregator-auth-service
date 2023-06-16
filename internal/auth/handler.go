@@ -226,7 +226,7 @@ func (h *authHandler) validate(c *gin.Context) {
 		}
 
 		tokenDomain, ok := claims["domain"].(string)
-		if !ok || (domain != tokenDomain && irole != "system") {
+		if (!ok || (domain != tokenDomain && irole != "system")) && irole != systemRole {
 			h.log.Debugf("validate: url domain != token domain (urlDomain - %s, tokenDomain - %s) or tokenDomain domain failed", tokenDomain, tokenDomain)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
@@ -483,6 +483,8 @@ func (h *authHandler) getDomain(c *gin.Context) string {
 
 // Устанавливает domain из host в контекст "domain"
 func (h *authHandler) domainMiddleware(c *gin.Context) {
+	h.log.Debug("handle domainMiddleware")
+
 	host := c.Request.Host
 
 	var shopDomain string
@@ -498,11 +500,6 @@ func (h *authHandler) domainMiddleware(c *gin.Context) {
 	} else {
 		h.log.Debug("domainMiddleware: domain is not defined (not contains `.`)")
 		c.AbortWithStatus(http.StatusNotFound)
-		return
-	}
-
-	if shopDomain == "public" {
-		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
 
@@ -526,6 +523,8 @@ func (h *authHandler) domainMiddleware(c *gin.Context) {
 
 // (Внутренние сервисы) Устанавливает domain из host в контекст "domain"
 func (h *authHandler) systemDomainMiddleware(c *gin.Context) {
+	h.log.Debug("handle systemDomainMiddleware")
+
 	domain := c.Query("domain")
 	if domain == "" {
 		h.log.Debug("systemDomainMiddleware: domain is not defined")
@@ -546,11 +545,6 @@ func (h *authHandler) systemDomainMiddleware(c *gin.Context) {
 		}
 	}
 
-	if domain == "public" {
-		c.AbortWithStatus(http.StatusForbidden)
-		return
-	}
-
 	c.Set("domain", domain)
 
 	c.Next()
@@ -559,6 +553,8 @@ func (h *authHandler) systemDomainMiddleware(c *gin.Context) {
 // Авторизация и аутентификация (jwt)
 func (h *authHandler) authWithRoleMiddleware(role []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		h.log.Debug("handle authWithRoleMiddleware")
+
 		tokenString := c.Request.Header.Get("Authorization")
 
 		if tokenString == "" {
@@ -603,7 +599,7 @@ func (h *authHandler) authWithRoleMiddleware(role []string) gin.HandlerFunc {
 
 			urlDomain := h.getDomain(c)
 			tokenDomain, ok := claims["domain"].(string)
-			if !ok || (urlDomain != "" && tokenDomain != urlDomain) {
+			if (!ok || (urlDomain != "" && tokenDomain != urlDomain)) && userRole != systemRole {
 				h.log.Debugf("authmiddleware: url domain != token domain (urlDomain - %s, tokenDomain - %s) or tokenDomain domain failed", urlDomain, tokenDomain)
 				c.AbortWithStatus(http.StatusUnauthorized)
 				return
