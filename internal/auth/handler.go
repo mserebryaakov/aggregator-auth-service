@@ -37,36 +37,41 @@ func (h *authHandler) Register(router *gin.Engine) {
 	{
 		auth.POST(loginPath, h.domainMiddleware, h.login)
 		auth.POST(signUpPath, h.domainMiddleware, h.signup)
-		auth.POST(validatePath, h.domainMiddleware, h.authMiddleware, h.validate)
+		auth.POST(validatePath, h.domainMiddleware, h.authWithRoleMiddleware([]string{}), h.validate)
 	}
+
 	user := router.Group("/user")
 	{
-		user.POST(userRolePath, h.domainMiddleware, h.authMiddleware, h.systemAndAdminRole, h.setRole)
-		user.POST("", h.domainMiddleware, h.authMiddleware, h.systemAndAdminRole, h.createUser)
-		user.PATCH("", h.domainMiddleware, h.authMiddleware, h.systemAndAdminRole, h.updateUser)
+		user.POST(userRolePath, h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.setRole)
+		user.POST("", h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.createUser)
+		user.PATCH("", h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.updateUser)
 	}
 
 	init := router.Group("/init")
 	{
-		init.POST("/start", h.authMiddleware, h.systemRole, h.initstart)
-		init.POST("/rollback", h.authMiddleware, h.systemRole, h.initrollback)
+		//init.POST("/start", h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.initstart)
+		init.POST("/start", h.initstart)
+		init.POST("/rollback", h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.initrollback)
 	}
+
 	system := router.Group("/system")
 	{
 		sestemAuthSub := system.Group("/auth")
 		{
-			sestemAuthSub.POST(validatePath, h.systemDomainMiddleware, h.authMiddleware, h.validate)
+			sestemAuthSub.POST(validatePath, h.systemDomainMiddleware, h.authWithRoleMiddleware([]string{}), h.validate)
 			sestemAuthSub.POST(loginPath, h.systemDomainMiddleware, h.login)
 		}
 	}
 }
 
+// Авторизация
 func (h *authHandler) login(c *gin.Context) {
-	h.log.Debugf("login hadnler start")
+	h.log.Debugf("handler login")
 
-	domain, err := h.getDomain(c)
-	if err != nil {
-		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+	domain := h.getDomain(c)
+	if domain == "" {
+		h.log.Debug("login: domain is not defined")
+		h.newErrorResponse(c, http.StatusBadRequest, "domain is not defined")
 		return
 	}
 
@@ -76,17 +81,22 @@ func (h *authHandler) login(c *gin.Context) {
 	}
 
 	if c.ShouldBindJSON(&body) != nil {
+		h.log.Debug("login: failed to read body")
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
 
+	h.log.Debug("login: body - %s", body)
+
 	token, err := h.authService.LoginUser(body.Email, body.Password, domain)
 	if err != nil {
 		if err == errFailedPasswordOrEmail {
+			h.log.Debug("login: failed password or email")
 			h.newErrorResponse(c, http.StatusBadRequest, "incorrect email or password")
 			return
 		}
 
+		h.log.Debugf("login: login server error - %v", err)
 		h.newErrorResponse(c, http.StatusInternalServerError, "login server error")
 		return
 	}
@@ -96,12 +106,14 @@ func (h *authHandler) login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{})
 }
 
+// Регистрация пользователя
 func (h *authHandler) signup(c *gin.Context) {
 	h.log.Debugf("login hadnler signup")
 
-	domain, err := h.getDomain(c)
-	if err != nil {
-		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+	domain := h.getDomain(c)
+	if domain == "" {
+		h.log.Debug("signup: domain is not defined")
+		h.newErrorResponse(c, http.StatusBadRequest, "domain is not defined")
 		return
 	}
 
@@ -111,13 +123,16 @@ func (h *authHandler) signup(c *gin.Context) {
 	}
 
 	if c.ShouldBindJSON(&body) != nil {
+		h.log.Debug("signup: failed to read body")
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
 
-	var clientRole uint = 3
-	id, err := h.authService.CreateUser(&User{Email: body.Email, Password: body.Password, RoleID: &clientRole}, domain)
+	h.log.Debug("signup: body - %s", body)
+
+	id, err := h.authService.CreateUser(&User{Email: body.Email, Password: body.Password, RoleID: getClientRoleId()}, domain)
 	if err != nil {
+		h.log.Debug("signup: failed to create user with err - %s", err)
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -127,21 +142,26 @@ func (h *authHandler) signup(c *gin.Context) {
 	})
 }
 
+// Проверка прав токена
 func (h *authHandler) validate(c *gin.Context) {
-	h.log.Debugf("login hadnler validate")
+	h.log.Debugf("handler validate")
 
 	var body struct {
 		Role []string `json:"role"`
 	}
 
 	if c.ShouldBindJSON(&body) != nil {
+		h.log.Debug("handler: failed to read body")
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
 
+	h.log.Debug("validate: body - %s", body)
+
 	tokenString := c.Request.Header.Get("X-System-Token")
 
 	if tokenString == "" {
+		h.log.Debug("validate: system token is not defined")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
@@ -154,24 +174,32 @@ func (h *authHandler) validate(c *gin.Context) {
 		return []byte(h.jwtSecret), nil
 	})
 	if err != nil {
-		h.log.Debugf("error jwt parse token: %v", err)
+		h.log.Debugf("validate: error jwt parse token: %v", err)
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 		if float64(time.Now().Unix()) > claims["exp"].(float64) {
+			h.log.Debugf("validate: token exp error - %s", tokenString)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
 		userId, ok := claims["sub"].(float64)
 		if !ok {
+			h.log.Debugf("validate: token sub error - %s", tokenString)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
 		irole, ok := claims["role"].(string)
+		if !ok {
+			h.log.Debugf("validate: token role error - %s", tokenString)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
 		found := false
 		for _, str := range body.Role {
 			if str == irole {
@@ -184,19 +212,22 @@ func (h *authHandler) validate(c *gin.Context) {
 			found = true
 		}
 
-		if !ok || !found {
+		if !found {
+			h.log.Debugf("validate: role not found in body.Role (role -%s, body.Role - %s)", irole, body.Role)
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}
 
-		domain, err := h.getDomain(c)
-		if err != nil && irole != "system" {
-			h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+		domain := h.getDomain(c)
+		if domain == "" {
+			h.log.Debugf("validate: domain is not defined")
+			h.newErrorResponse(c, http.StatusBadRequest, "domain is not defined")
 			return
 		}
 
-		idomain, ok := claims["domain"].(string)
-		if !ok || (domain != idomain && irole != "system") {
+		tokenDomain, ok := claims["domain"].(string)
+		if !ok || (domain != tokenDomain && irole != "system") {
+			h.log.Debugf("validate: url domain != token domain (urlDomain - %s, tokenDomain - %s) or tokenDomain domain failed", tokenDomain, tokenDomain)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
@@ -205,17 +236,20 @@ func (h *authHandler) validate(c *gin.Context) {
 			"userId": userId,
 		})
 	} else {
+		h.log.Debug("validate: token not valid")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 }
 
+// Установка роли пользователю
 func (h *authHandler) setRole(c *gin.Context) {
-	h.log.Debugf("login hadnler setRole")
+	h.log.Debugf("handler setRole")
 
-	domain, err := h.getDomain(c)
-	if err != nil {
-		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+	domain := h.getDomain(c)
+	if domain == "" {
+		h.log.Debug("setRole: domain is not defined")
+		h.newErrorResponse(c, http.StatusBadRequest, "domain is not defined")
 		return
 	}
 
@@ -225,12 +259,16 @@ func (h *authHandler) setRole(c *gin.Context) {
 	}
 
 	if c.ShouldBindJSON(&body) != nil {
+		h.log.Debug("setRole: failed to read body")
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
 
-	err = h.authService.SetRoleByCode(body.Id, body.Role, domain)
+	h.log.Debug("setRole: body - %s", body)
+
+	err := h.authService.SetRoleByCode(body.Id, body.Role, domain)
 	if err != nil {
+		h.log.Debug("setRole: failed to setRole with err - %s", err)
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -238,28 +276,35 @@ func (h *authHandler) setRole(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{})
 }
 
+// Создание пользователя
 func (h *authHandler) createUser(c *gin.Context) {
-	h.log.Debugf("login hadnler createUser")
+	h.log.Debugf("handler createUser")
 
-	domain, err := h.getDomain(c)
-	if err != nil {
-		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+	domain := h.getDomain(c)
+	if domain == "" {
+		h.log.Debug("createUser: domain is not defined")
+		h.newErrorResponse(c, http.StatusBadRequest, "domain is not defined")
 		return
 	}
 
 	var body User = User{}
 
 	if c.ShouldBindJSON(&body) != nil {
+		h.log.Debug("createUser: failed to read body")
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
 
+	h.log.Debug("createUser: body - %s", body)
+
 	id, err := h.authService.CreateUser(&body, domain)
 	if err != nil {
 		if err == errUserWithEmailAlreadyExists {
+			h.log.Debug("createUser: user with email (%s) already exist", body.Email)
 			h.newErrorResponse(c, http.StatusConflict, err.Error())
 			return
 		}
+		h.log.Debug("createUser: failed create user with err - %s", err)
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -269,24 +314,28 @@ func (h *authHandler) createUser(c *gin.Context) {
 	})
 }
 
+// Обновление пользователя
 func (h *authHandler) updateUser(c *gin.Context) {
-	h.log.Debugf("login hadnler updateUser")
+	h.log.Debugf("handler updateUser")
 
-	domain, err := h.getDomain(c)
-	if err != nil {
-		h.newErrorResponse(c, http.StatusBadRequest, err.Error())
+	domain := h.getDomain(c)
+	if domain == "" {
+		h.log.Debug("updateUser: domain is not defined")
+		h.newErrorResponse(c, http.StatusBadRequest, "domain is not defined")
 		return
 	}
 
 	var body User = User{}
 
 	if c.ShouldBindJSON(&body) != nil {
+		h.log.Debug("updateUser: failed to read body")
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
 
-	err = h.authService.UpdateUser(&body, domain)
+	err := h.authService.UpdateUser(&body, domain)
 	if err != nil {
+		h.log.Errorf("updateUser: failed update user with err - %v", err)
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -294,8 +343,9 @@ func (h *authHandler) updateUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{})
 }
 
+// Инициализация площадки
 func (h *authHandler) initstart(c *gin.Context) {
-	h.log.Debugf("login hadnler initstart")
+	h.log.Debugf("handler initstart")
 
 	var body struct {
 		Email    string `json:"email"`
@@ -303,11 +353,12 @@ func (h *authHandler) initstart(c *gin.Context) {
 	}
 
 	if c.ShouldBindJSON(&body) != nil {
+		h.log.Debug("initstart: failed read body")
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
 
-	h.log.Debugf("initstart body - %+v", body)
+	h.log.Debugf("initstart: body - %s", body)
 
 	domain := c.Query("domain")
 	if domain == "" {
@@ -338,17 +389,27 @@ func (h *authHandler) initstart(c *gin.Context) {
 
 	err = h.authService.CreateSchema(domain)
 	if err != nil {
-		h.authService.DeleteArea(domain)
+		h.log.Errorf("initstart: create schema err - %v", err)
+		err := h.authService.DeleteArea(domain)
+		if err != nil {
+			h.log.Errorf("initstart: delete area after create schema err - %v", err)
+		}
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	var adminRole uint = 1
-	admin := User{Email: body.Email, Password: body.Password, RoleID: &adminRole}
+	admin := User{Email: body.Email, Password: body.Password, RoleID: getAdminRoleId()}
 	_, err = h.authService.CreateUser(&admin, domain)
 	if err != nil {
-		h.authService.DeleteArea(domain)
-		h.authService.DeleteSchema(domain)
+		h.log.Errorf("initstart: failed create user - %v", err)
+		err = h.authService.DeleteArea(domain)
+		if err != nil {
+			h.log.Errorf("initstart: failed delete area after create user err - %v", err)
+		}
+		err = h.authService.DeleteSchema(domain)
+		if err != nil {
+			h.log.Errorf("initstart: failed delete schema after create user err - %v", err)
+		}
 		h.newErrorResponse(c, http.StatusInternalServerError, "failed create admin user")
 		return
 	}
@@ -356,11 +417,13 @@ func (h *authHandler) initstart(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{})
 }
 
+// Отмена инициализации площадки
 func (h *authHandler) initrollback(c *gin.Context) {
-	h.log.Debugf("login hadnler initrollback")
+	h.log.Debugf("handler initrollback")
 
 	domain := c.Query("domain")
 	if domain == "" {
+		h.log.Debug("initrollback: missing query parameter (domain)")
 		h.newErrorResponse(c, http.StatusBadRequest, "missing query parameter (domain)")
 		return
 	}
@@ -398,44 +461,28 @@ type response struct {
 	Message string `json:"message"`
 }
 
+// Формирование respone
 func (h *authHandler) newErrorResponse(c *gin.Context, statusCode int, message string) {
-	h.log.Errorf(message)
 	c.AbortWithStatusJSON(statusCode, &response{
 		Message: message,
 	})
 }
 
-func (h *authHandler) getDomain(c *gin.Context) (string, error) {
+// Получение domain их контекста "domain"
+func (h *authHandler) getDomain(c *gin.Context) string {
 	domain, exists := c.Get("domain")
 	if exists {
 		domainStr, ok := domain.(string)
 		if ok {
-			return domainStr, nil
-		} else {
-			return "", fmt.Errorf("incorrect domain type - %v", domain)
+			return domainStr
 		}
-	} else {
-		return "", fmt.Errorf("domain not found")
+		h.log.Errorf("incorrect domain type - %s", domain)
 	}
+	return ""
 }
 
-func (h *authHandler) getRole(c *gin.Context) (string, error) {
-	role, exists := c.Get("userRole")
-	if exists {
-		roleStr, ok := role.(string)
-		if ok {
-			return roleStr, nil
-		} else {
-			return "", fmt.Errorf("incorrect role type - %v", role)
-		}
-	} else {
-		return "", fmt.Errorf("role not found")
-	}
-}
-
+// Устанавливает domain из host в контекст "domain"
 func (h *authHandler) domainMiddleware(c *gin.Context) {
-	h.log.Debugf("domainMiddleware start")
-
 	host := c.Request.Host
 
 	var shopDomain string
@@ -444,17 +491,25 @@ func (h *authHandler) domainMiddleware(c *gin.Context) {
 		if len(arr) == 2 {
 			shopDomain = strings.Split(host, ".")[0]
 		} else {
+			h.log.Debug("domainMiddleware: host split error - len > 2")
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
 	} else {
+		h.log.Debug("domainMiddleware: domain is not defined (not contains `.`)")
 		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	if shopDomain == "public" {
+		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
 
 	_, err := h.authService.GetAreaByDomain(shopDomain)
 	if err != nil {
 		if err == errAreaNotFound {
+			h.log.Debug("domainMiddleware: domain is not defined")
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		} else {
@@ -464,123 +519,16 @@ func (h *authHandler) domainMiddleware(c *gin.Context) {
 		}
 	}
 
-	fmt.Printf("request with domain - %s", shopDomain)
 	c.Set("domain", shopDomain)
 
 	c.Next()
 }
 
-func (h *authHandler) authMiddleware(c *gin.Context) {
-	h.log.Debugf("authMiddleware start")
-
-	tokenString := c.Request.Header.Get("Authorization")
-
-	h.log.Debugf("authMiddleware Authorization Header - %s", tokenString)
-
-	if tokenString == "" {
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-
-		return []byte(h.jwtSecret), nil
-	})
-	if err != nil {
-		h.log.Debugf("error jwt parse token: %v", err)
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		if float64(time.Now().Unix()) > claims["exp"].(float64) {
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		userId, ok := claims["sub"].(float64)
-		if !ok {
-			h.log.Debugf("authMiddleware Authorization Token Sub error - %s", tokenString)
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		userRole, ok := claims["role"].(string)
-		if !ok {
-			h.log.Debugf("authMiddleware Authorization Token UserRole error - %s", tokenString)
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		domain, err := h.getDomain(c)
-		if err != nil && userRole != "system" {
-			h.log.Debugf("authMiddleware get domain err and userrole != system")
-			h.newErrorResponse(c, http.StatusUnauthorized, err.Error())
-			return
-		}
-
-		idomain, ok := claims["domain"].(string)
-		if userRole != "system" {
-			if !ok || idomain != domain {
-				c.AbortWithStatus(http.StatusUnauthorized)
-				return
-			}
-		}
-
-		c.Set("userId", userId)
-		c.Set("userRole", userRole)
-
-		c.Next()
-	} else {
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-}
-
-func (h *authHandler) systemAndAdminRole(c *gin.Context) {
-	h.log.Debugf("systemAndAdminRole start")
-
-	role, err := h.getRole(c)
-	if err != nil {
-		h.log.Errorf("missing role in jwt - %v", role)
-		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if role == "system" || role == "admin" {
-		c.Next()
-	} else {
-		c.AbortWithStatus(http.StatusForbidden)
-		return
-	}
-}
-
-func (h *authHandler) systemRole(c *gin.Context) {
-	h.log.Debugf("systemRole start")
-
-	role, err := h.getRole(c)
-	if err != nil {
-		h.log.Errorf("missing role in jwt - %v", role)
-		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if role == "system" {
-		c.Next()
-	} else {
-		c.AbortWithStatus(http.StatusForbidden)
-		return
-	}
-}
-
+// (Внутренние сервисы) Устанавливает domain из host в контекст "domain"
 func (h *authHandler) systemDomainMiddleware(c *gin.Context) {
-	h.log.Debugf("systemDomainMiddleware start")
-
 	domain := c.Query("domain")
 	if domain == "" {
+		h.log.Debug("systemDomainMiddleware: domain is not defined")
 		h.newErrorResponse(c, http.StatusBadRequest, "missing query parameter (domain)")
 		return
 	}
@@ -588,17 +536,105 @@ func (h *authHandler) systemDomainMiddleware(c *gin.Context) {
 	_, err := h.authService.GetAreaByDomain(domain)
 	if err != nil {
 		if err == errAreaNotFound {
+			h.log.Debug("systemDomainMiddleware: area with domain (%s) not found", domain)
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		} else {
-			h.log.Errorf("domainMiddleware: failed GetAreaByDomain - %v", err)
+			h.log.Errorf("systemDomainMiddleware: failed GetAreaByDomain - %v", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 	}
 
-	fmt.Printf("request with domain - %s", domain)
+	if domain == "public" {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+
 	c.Set("domain", domain)
 
 	c.Next()
+}
+
+// Авторизация и аутентификация (jwt)
+func (h *authHandler) authWithRoleMiddleware(role []string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenString := c.Request.Header.Get("Authorization")
+
+		if tokenString == "" {
+			h.log.Debug("authmiddleware: authorization token not found")
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+
+			return []byte(h.jwtSecret), nil
+		})
+		if err != nil {
+			h.log.Debugf("authmiddleware: error jwt parse token: %v", err)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+			if float64(time.Now().Unix()) > claims["exp"].(float64) {
+				h.log.Debugf("authmiddleware: authorization token exp error (claims - %s)", claims)
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
+
+			userId, ok := claims["sub"].(float64)
+			if !ok {
+				h.log.Debugf("authmiddleware: authorization token sub error - %s", tokenString)
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
+
+			userRole, ok := claims["role"].(string)
+			if !ok {
+				h.log.Debugf("authmiddleware: authorization token role error - %s", tokenString)
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
+
+			urlDomain := h.getDomain(c)
+			tokenDomain, ok := claims["domain"].(string)
+			if !ok || (urlDomain != "" && tokenDomain != urlDomain) {
+				h.log.Debugf("authmiddleware: url domain != token domain (urlDomain - %s, tokenDomain - %s) or tokenDomain domain failed", urlDomain, tokenDomain)
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
+
+			roleSuccess := false
+			if len(role) == 0 {
+				roleSuccess = true
+			}
+
+			for _, v := range role {
+				if v == userRole {
+					roleSuccess = true
+					break
+				}
+			}
+
+			if !roleSuccess {
+				h.log.Debugf("authmiddleware: role forbidden (userRole - %s, role - %s)", userRole, role)
+				c.AbortWithStatus(http.StatusForbidden)
+				return
+			}
+
+			c.Set("userId", userId)
+			c.Set("userRole", userRole)
+
+			c.Next()
+		} else {
+			h.log.Debugf("authmiddleware: invalid token")
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+	}
 }

@@ -12,10 +12,8 @@ type Config struct {
 	Server ServerConfig `mapstructure:"server"`
 }
 
-var vp *viper.Viper
-
 func LoadConfig() (Config, error) {
-	vp = viper.New()
+	vp := viper.New()
 
 	var config Config
 

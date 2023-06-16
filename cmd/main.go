@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -39,14 +38,14 @@ func main() {
 		SSLMode:  env.SSLMode,
 		TimeZone: env.TimeZone,
 	}
-	fmt.Printf("CONFIG - %+v", postgresConfig)
+
 	scp := postgres.NewSchemaConnectionPool(postgresConfig, log)
 	authDb, err := scp.GetConnectionPool("public")
 	if err != nil {
 		log.Fatalf("failed connection to db: %v", err)
 	}
 
-	err = auth.RunAuthMigration(authDb)
+	err = auth.RunAuthServiceMigration(authDb)
 	if err != nil {
 		log.Fatalf("migration error: %v", err)
 	}

@@ -32,189 +32,187 @@ func NewStorage(scp *postgres.SchemaConnectionPool) Storage {
 	}
 }
 
-func (s *AuthStorage) CreateUser(user *User, schema string) (uint, error) {
+func (s *AuthStorage) withConnectionPool(fn func(db *gorm.DB) error, schema string) error {
 	db, err := s.scp.GetConnectionPool(schema)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	result := db.Create(&user)
-	if result.Error != nil {
-		return 0, fmt.Errorf("failed to create user")
+	return fn(db)
+}
+
+func (s *AuthStorage) CreateUser(user *User, schema string) (uint, error) {
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.Create(&user).Error
+	}, schema)
+
+	if err != nil {
+		return 0, err
 	}
 	return user.ID, nil
 }
 
 func (s *AuthStorage) GetUserByEmail(email string, schema string) (*User, error) {
-	db, err := s.scp.GetConnectionPool(schema)
+	var user User
+
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.First(&user, "email = ?", email).Error
+	}, schema)
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	var user User
-	result := db.First(&user, "email = ?", email)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to get user")
-	}
 	return &user, nil
 }
 
 func (s *AuthStorage) GetUserById(id uint, schema string) (*User, error) {
-	db, err := s.scp.GetConnectionPool(schema)
+	var user User
+
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.First(&user, id).Error
+	}, schema)
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	var user User
-	result := db.First(&user, id)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to find user")
-	}
 	return &user, nil
 }
 
 func (s *AuthStorage) GetRoleByCode(code string, schema string) (*Role, error) {
-	db, err := s.scp.GetConnectionPool(schema)
+	var role Role
+
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.First(&role, "code = ?", code).Error
+	}, schema)
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	var role Role
-	result := db.First(&role, "code = ?", code)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to find user")
-	}
 	return &role, nil
 }
 
 func (s *AuthStorage) UpdateUser(user *User, schema string) error {
-	db, err := s.scp.GetConnectionPool(schema)
-	if err != nil {
-		return err
-	}
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.Save(user).Error
+	}, schema)
 
-	result := db.Save(user)
-	if result.Error != nil {
-		return result.Error
-	}
-	return nil
+	return err
 }
 
 func (s *AuthStorage) CreateArea(area *Area) (uint, error) {
-	db, err := s.scp.GetConnectionPool("public")
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.Create(&area).Error
+	}, "public")
+
 	if err != nil {
 		return 0, err
 	}
-	result := db.Create(&area)
-	if result.Error != nil {
-		return 0, fmt.Errorf("failed to create area")
-	}
+
 	return area.ID, nil
 }
 
 func (s *AuthStorage) GetAllArea() ([]Area, error) {
-	db, err := s.scp.GetConnectionPool("public")
+	var area []Area
+
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.Find(&area).Error
+	}, "public")
+
 	if err != nil {
 		return nil, err
 	}
-	var area []Area
-	result := db.Find(&area)
-	if result.Error != nil {
-		return nil, fmt.Errorf("failed to get all area")
-	}
+
 	return area, nil
 }
 
 func (s *AuthStorage) GetAreaByDomain(domain string) (*Area, error) {
-	db, err := s.scp.GetConnectionPool("public")
+	var area Area
+
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.First(&area, "domain = ?", domain).Error
+	}, "public")
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	var area Area
-	result := db.First(&area, "domain = ?", domain)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to get area")
-	}
 	return &area, nil
 }
 
 func (s *AuthStorage) CreateSchema(domain string) error {
-	publicschema, err := s.scp.GetConnectionPool("public")
-	if err != nil {
-		return err
-	}
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		tx := db.Begin()
+		if tx.Error != nil {
+			return tx.Error
+		}
 
-	tx := publicschema.Begin()
-	if tx.Error != nil {
-		return tx.Error
-	}
+		var count int64
+		tx.Raw("SELECT COUNT(*) FROM pg_namespace WHERE nspname = ?", domain).Scan(&count)
+		if count != 0 {
+			tx.Rollback()
+			return fmt.Errorf("create schema failed (already exists): %s", domain)
+		}
 
-	var count int64
-	tx.Raw("SELECT COUNT(*) FROM pg_namespace WHERE nspname = ?", domain).Scan(&count)
-	if count != 0 {
-		tx.Rollback()
-		return fmt.Errorf("create schema failed (already exists): %s", domain)
-	}
+		if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS " + domain).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
 
-	if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS " + domain).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
+		err := tx.Commit().Error
+		if err != nil {
+			return err
+		}
 
-	err = tx.Commit().Error
-	if err != nil {
-		return err
-	}
+		resschema, err := s.scp.GetConnectionPool(domain)
+		if err != nil {
+			return err
+		}
 
-	resschema, err := s.scp.GetConnectionPool(domain)
-	if err != nil {
-		return err
-	}
+		err = RunSchemaMigration(resschema)
+		if err != nil {
+			return err
+		}
 
-	err = RunSchemaMigration(resschema)
-	if err != nil {
-		fmt.Printf("Fatal create schema - failed migrations - %s", domain)
-		return err
-	}
+		return nil
+	}, "public")
 
-	return nil
+	return err
 }
 
 func (s *AuthStorage) DeleteArea(domain string) error {
-	publicschema, err := s.scp.GetConnectionPool("public")
-	if err != nil {
-		return err
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.Where("domain = ?", domain).Delete(&Area{}).Error
+	}, "public")
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
 	}
 
-	result := publicschema.Where("domain = ?", domain).Delete(&Area{})
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete area")
-	}
-
-	return nil
+	return err
 }
 
 func (s *AuthStorage) DeleteSchema(domain string) error {
-	publicschema, err := s.scp.GetConnectionPool("public")
-	if err != nil {
-		return err
-	}
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.Exec("DROP SCHEMA IF EXISTS " + domain + " CASCADE").Error
+	}, "public")
 
-	if err := publicschema.Exec("DROP SCHEMA IF EXISTS " + domain + " CASCADE").Error; err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
