@@ -86,7 +86,7 @@ func (h *authHandler) login(c *gin.Context) {
 		return
 	}
 
-	h.log.Debug("login: body - %s", body)
+	h.log.Debugf("login: body - %s", body)
 
 	token, err := h.authService.LoginUser(body.Email, body.Password, domain)
 	if err != nil {
@@ -128,11 +128,11 @@ func (h *authHandler) signup(c *gin.Context) {
 		return
 	}
 
-	h.log.Debug("signup: body - %s", body)
+	h.log.Debugf("signup: body - %s", body)
 
 	id, err := h.authService.CreateUser(&User{Email: body.Email, Password: body.Password, RoleID: getClientRoleId()}, domain)
 	if err != nil {
-		h.log.Debug("signup: failed to create user with err - %s", err)
+		h.log.Debugf("signup: failed to create user with err - %s", err)
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -156,7 +156,7 @@ func (h *authHandler) validate(c *gin.Context) {
 		return
 	}
 
-	h.log.Debug("validate: body - %s", body)
+	h.log.Debugf("validate: body - %s", body)
 
 	tokenString := c.Request.Header.Get("X-System-Token")
 
@@ -264,11 +264,11 @@ func (h *authHandler) setRole(c *gin.Context) {
 		return
 	}
 
-	h.log.Debug("setRole: body - %s", body)
+	h.log.Debugf("setRole: body - %v", body)
 
 	err := h.authService.SetRoleByCode(body.Id, body.Role, domain)
 	if err != nil {
-		h.log.Debug("setRole: failed to setRole with err - %s", err)
+		h.log.Debugf("setRole: failed to setRole with err - %s", err)
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -295,16 +295,16 @@ func (h *authHandler) createUser(c *gin.Context) {
 		return
 	}
 
-	h.log.Debug("createUser: body - %s", body)
+	h.log.Debugf("createUser: body - %+v", body)
 
 	id, err := h.authService.CreateUser(&body, domain)
 	if err != nil {
 		if err == errUserWithEmailAlreadyExists {
-			h.log.Debug("createUser: user with email (%s) already exist", body.Email)
+			h.log.Debugf("createUser: user with email (%s) already exist", body.Email)
 			h.newErrorResponse(c, http.StatusConflict, err.Error())
 			return
 		}
-		h.log.Debug("createUser: failed create user with err - %s", err)
+		h.log.Debugf("createUser: failed create user with err - %s", err)
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -535,7 +535,7 @@ func (h *authHandler) systemDomainMiddleware(c *gin.Context) {
 	_, err := h.authService.GetAreaByDomain(domain)
 	if err != nil {
 		if err == errAreaNotFound {
-			h.log.Debug("systemDomainMiddleware: area with domain (%s) not found", domain)
+			h.log.Debugf("systemDomainMiddleware: area with domain (%s) not found", domain)
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		} else {
