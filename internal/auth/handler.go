@@ -151,7 +151,7 @@ func (h *authHandler) validate(c *gin.Context) {
 	}
 
 	if c.ShouldBindJSON(&body) != nil {
-		h.log.Debug("handler: failed to read body")
+		h.log.Debug("validate: failed to read body")
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
