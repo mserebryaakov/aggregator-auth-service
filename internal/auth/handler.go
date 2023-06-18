@@ -86,7 +86,7 @@ func (h *authHandler) login(c *gin.Context) {
 		return
 	}
 
-	h.log.Debugf("login: body - %s", body)
+	h.log.Debugf("login: body - %+v", body)
 
 	token, err := h.authService.LoginUser(body.Email, body.Password, domain)
 	if err != nil {
@@ -128,7 +128,7 @@ func (h *authHandler) signup(c *gin.Context) {
 		return
 	}
 
-	h.log.Debugf("signup: body - %s", body)
+	h.log.Debugf("signup: body - %+v", body)
 
 	id, err := h.authService.CreateUser(&User{Email: body.Email, Password: body.Password, RoleID: getClientRoleId()}, domain)
 	if err != nil {
@@ -156,7 +156,7 @@ func (h *authHandler) validate(c *gin.Context) {
 		return
 	}
 
-	h.log.Debugf("validate: body - %s", body)
+	h.log.Debugf("validate: body - %+v", body)
 
 	tokenString := c.Request.Header.Get("X-System-Token")
 
@@ -264,7 +264,7 @@ func (h *authHandler) setRole(c *gin.Context) {
 		return
 	}
 
-	h.log.Debugf("setRole: body - %v", body)
+	h.log.Debugf("setRole: body - %+v", body)
 
 	err := h.authService.SetRoleByCode(body.Id, body.Role, domain)
 	if err != nil {
@@ -333,6 +333,8 @@ func (h *authHandler) updateUser(c *gin.Context) {
 		return
 	}
 
+	h.log.Debugf("updateUser: body - %+v", body)
+
 	err := h.authService.UpdateUser(&body, domain)
 	if err != nil {
 		h.log.Errorf("updateUser: failed update user with err - %v", err)
@@ -358,7 +360,7 @@ func (h *authHandler) initstart(c *gin.Context) {
 		return
 	}
 
-	h.log.Debugf("initstart: body - %s", body)
+	h.log.Debugf("initstart: body - %+v", body)
 
 	domain := c.Query("domain")
 	if domain == "" {
