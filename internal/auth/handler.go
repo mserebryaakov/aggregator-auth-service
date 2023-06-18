@@ -80,8 +80,8 @@ func (h *authHandler) login(c *gin.Context) {
 		Password string `json:"password"`
 	}
 
-	if c.ShouldBindJSON(&body) != nil {
-		h.log.Debug("login: failed to read body")
+	if err := c.ShouldBindJSON(&body); err != nil {
+		h.log.Debugf("login: failed to read body - %v", err)
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
@@ -122,8 +122,8 @@ func (h *authHandler) signup(c *gin.Context) {
 		Password string `json:"password"`
 	}
 
-	if c.ShouldBindJSON(&body) != nil {
-		h.log.Debug("signup: failed to read body")
+	if err := c.ShouldBindJSON(&body); err != nil {
+		h.log.Debugf("signup: failed to read body - %v", err)
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
@@ -150,8 +150,8 @@ func (h *authHandler) validate(c *gin.Context) {
 		Role []string `json:"role"`
 	}
 
-	if c.ShouldBindJSON(&body) != nil {
-		h.log.Debug("validate: failed to read body")
+	if err := c.ShouldBindJSON(&body); err != nil {
+		h.log.Debugf("validate: failed to read body - %v", err)
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
@@ -258,8 +258,8 @@ func (h *authHandler) setRole(c *gin.Context) {
 		Role string `json:"role"`
 	}
 
-	if c.ShouldBindJSON(&body) != nil {
-		h.log.Debug("setRole: failed to read body")
+	if err := c.ShouldBindJSON(&body); err != nil {
+		h.log.Debugf("setRole: failed to read body - %v", err)
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
@@ -289,8 +289,8 @@ func (h *authHandler) createUser(c *gin.Context) {
 
 	var body User = User{}
 
-	if c.ShouldBindJSON(&body) != nil {
-		h.log.Debug("createUser: failed to read body")
+	if err := c.ShouldBindJSON(&body); err != nil {
+		h.log.Debugf("createUser: failed to read body - %v", err)
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
@@ -327,8 +327,8 @@ func (h *authHandler) updateUser(c *gin.Context) {
 
 	var body User = User{}
 
-	if c.ShouldBindJSON(&body) != nil {
-		h.log.Debug("updateUser: failed to read body")
+	if err := c.ShouldBindJSON(&body); err != nil {
+		h.log.Debugf("updateUser: failed to read body - %v", err)
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
@@ -352,8 +352,8 @@ func (h *authHandler) initstart(c *gin.Context) {
 		Password string `json:"password"`
 	}
 
-	if c.ShouldBindJSON(&body) != nil {
-		h.log.Debug("initstart: failed read body")
+	if err := c.ShouldBindJSON(&body); err != nil {
+		h.log.Debugf("initstart: failed read body - %v", err)
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
