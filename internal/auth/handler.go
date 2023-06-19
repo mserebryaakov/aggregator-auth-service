@@ -47,7 +47,7 @@ func (h *authHandler) Register(router *gin.Engine) {
 		user.PATCH("", h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.updateUser)
 	}
 
-	init := router.Group("/init")
+	init := router.Group("/auth/init")
 	{
 		//init.POST("/start", h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.initstart)
 		init.POST("/start", h.initstart)
@@ -261,6 +261,12 @@ func (h *authHandler) setRole(c *gin.Context) {
 	if err := c.ShouldBindJSON(&body); err != nil {
 		h.log.Debugf("setRole: failed to read body - %v", err)
 		h.newErrorResponse(c, http.StatusBadRequest, "failed to read body")
+		return
+	}
+
+	if body.Id == 0 || body.Role == "" {
+		h.log.Debug("setRole: invalid body (id = 0 or role = ``)")
+		h.newErrorResponse(c, http.StatusBadRequest, "invalid body (id = 0 or role = ``)")
 		return
 	}
 
