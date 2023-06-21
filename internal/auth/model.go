@@ -15,6 +15,7 @@ type User struct {
 	Surname  string `json:"surname"`
 	Address  string `json:"address"`
 	Blocked  bool   `json:"blocked"`
+	Phone    string `json:"phone"`
 	RoleID   *uint  `json:"role_id"`
 	Role     Role   `gorm:"foreignKey:RoleID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"-"`
 }
