@@ -44,7 +44,7 @@ func (h *authHandler) Register(router *gin.Engine) {
 	{
 		user.POST(userRolePath, h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.setRole)
 		user.POST("", h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.createUser)
-		user.PATCH("", h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.updateUser)
+		user.PUT("", h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.updateUser)
 	}
 
 	init := router.Group("/auth/init")
