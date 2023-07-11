@@ -14,12 +14,14 @@ type Storage interface {
 	GetUserByEmail(email string, schema string) (*User, error)
 	GetUserById(id uint, schema string) (*User, error)
 	GetRoleByCode(code string, schema string) (*Role, error)
+	GetAllUsers(schema string) ([]User, error)
 	CreateArea(area *Area) (uint, error)
 	GetAllArea() ([]Area, error)
 	GetAreaByDomain(domain string) (*Area, error)
 	DeleteArea(domain string) error
 	CreateSchema(domain string) error
 	DeleteSchema(domain string) error
+	DeleteUser(id uint, schema string) error
 }
 
 type AuthStorage struct {
@@ -53,6 +55,18 @@ func (s *AuthStorage) CreateUser(user *User, schema string) (uint, error) {
 		return 0, err
 	}
 	return user.ID, nil
+}
+
+func (s *AuthStorage) DeleteUser(id uint, schema string) error {
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.Delete(&User{}, id).Error
+	}, schema)
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+
+	return err
 }
 
 func (s *AuthStorage) GetUserByEmail(email string, schema string) (*User, error) {
@@ -219,4 +233,22 @@ func (s *AuthStorage) DeleteSchema(domain string) error {
 	}, "public")
 
 	return err
+}
+
+func (s *AuthStorage) GetAllUsers(schema string) ([]User, error) {
+	var users []User
+
+	err := s.withConnectionPool(func(db *gorm.DB) error {
+		return db.Find(&users).Error
+	}, schema)
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }

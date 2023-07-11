@@ -3,6 +3,7 @@ package auth
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,8 @@ func (h *authHandler) Register(router *gin.Engine) {
 	{
 		user.POST(userRolePath, h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.setRole)
 		user.POST("", h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.createUser)
+		user.DELETE("", h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.deleteUser)
+		user.GET("", h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.getAllUsers)
 		user.PUT("", h.domainMiddleware, h.authWithRoleMiddleware([]string{systemRole, adminRole}), h.updateUser)
 	}
 
@@ -103,7 +106,9 @@ func (h *authHandler) login(c *gin.Context) {
 
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("Authorization", token, 3600*24*30, "", "", false, true)
-	c.JSON(http.StatusOK, gin.H{})
+	c.JSON(http.StatusOK, gin.H{
+		"token": token,
+	})
 }
 
 // Регистрация пользователя
@@ -120,6 +125,10 @@ func (h *authHandler) signup(c *gin.Context) {
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		Name     string `json:"name"`
+		Surname  string `json:"surname"`
+		Address  string `json:"address"`
+		Phone    string `json:"phone"`
 	}
 
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -130,7 +139,15 @@ func (h *authHandler) signup(c *gin.Context) {
 
 	h.log.Debugf("signup: body - %+v", body)
 
-	id, err := h.authService.CreateUser(&User{Email: body.Email, Password: body.Password, RoleID: getClientRoleId()}, domain)
+	id, err := h.authService.CreateUser(&User{
+		Email:    body.Email,
+		Password: body.Password,
+		RoleID:   getClientRoleId(),
+		Name:     body.Name,
+		Surname:  body.Surname,
+		Address:  body.Address,
+		Phone:    body.Phone,
+	}, domain)
 	if err != nil {
 		h.log.Debugf("signup: failed to create user with err - %s", err)
 		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
@@ -280,6 +297,27 @@ func (h *authHandler) setRole(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{})
+}
+
+// Получение всех пользователей
+func (h *authHandler) getAllUsers(c *gin.Context) {
+	h.log.Debugf("handler getAllUsers")
+
+	domain := h.getDomain(c)
+	if domain == "" {
+		h.log.Debug("getAllUsers: domain is not defined")
+		h.newErrorResponse(c, http.StatusBadRequest, "domain is not defined")
+		return
+	}
+
+	users, err := h.authService.GetAllUsers(domain)
+	if err != nil {
+		h.log.Debugf("DeleteShop: getAllUsers err - %v", err)
+		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, users)
 }
 
 // Создание пользователя
@@ -463,6 +501,49 @@ func (h *authHandler) initrollback(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{})
+}
+
+func (h *authHandler) deleteUser(c *gin.Context) {
+	h.log.Debugf("handler deleteUser")
+
+	domain := h.getDomain(c)
+	if domain == "" {
+		h.log.Debug("deleteUser: domain is not defined")
+		h.newErrorResponse(c, http.StatusBadRequest, "domain is not defined")
+		return
+	}
+
+	id := c.Query("id")
+	if id == "" {
+		h.log.Debug("deleteUser: missing query parameter (id)")
+		h.newErrorResponse(c, http.StatusBadRequest, "missing query parameter (id)")
+		return
+	}
+
+	uintId, err := convertStringToUint(id)
+	if err != nil {
+		h.log.Debug("deleteUser: query param id is not uint")
+		h.newErrorResponse(c, http.StatusBadRequest, "query param id is not uint")
+		return
+	}
+
+	err = h.authService.DeleteUser(uintId, domain)
+	if err != nil {
+		h.log.Debugf("deleteUser: deleteUser err - %v", err)
+		h.newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{})
+}
+
+func convertStringToUint(str string) (uint, error) {
+	floatVal, err := strconv.ParseFloat(str, 64)
+	if err != nil {
+		return 0, err
+	}
+	uintVal := uint(floatVal)
+	return uintVal, nil
 }
 
 type response struct {

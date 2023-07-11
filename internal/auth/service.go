@@ -13,12 +13,14 @@ type AuthService interface {
 	UpdateUser(user *User, schema string) error
 	LoginUser(email, password, schema string) (string, error)
 	GetUserById(id uint, schema string) (*User, error)
+	GetAllUsers(schema string) ([]User, error)
 	SetRoleByCode(id uint, code string, schema string) error
 	GetAreaByDomain(domain string) (*Area, error)
 	CreateArea(domain string) (uint, error)
 	DeleteArea(domain string) error
 	CreateSchema(domain string) error
 	DeleteSchema(domain string) error
+	DeleteUser(id uint, schema string) error
 }
 
 type authService struct {
@@ -70,6 +72,7 @@ func (s *authService) CreateUser(user *User, schema string) (uint, error) {
 		Address:  user.Address,
 		Blocked:  user.Blocked,
 		RoleID:   user.RoleID,
+		Phone:    user.Phone,
 	}
 
 	return s.storage.CreateUser(&newUser, schema)
@@ -104,6 +107,10 @@ func (s *authService) UpdateUser(user *User, schema string) error {
 	}
 
 	return nil
+}
+
+func (s *authService) DeleteUser(id uint, schema string) error {
+	return s.storage.DeleteUser(id, schema)
 }
 
 func (s *authService) LoginUser(email, password, schema string) (string, error) {
@@ -202,4 +209,8 @@ func (s *authService) DeleteArea(domain string) error {
 
 func (s *authService) DeleteSchema(domain string) error {
 	return s.storage.DeleteSchema(domain)
+}
+
+func (s *authService) GetAllUsers(schema string) ([]User, error) {
+	return s.storage.GetAllUsers(schema)
 }

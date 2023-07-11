@@ -62,6 +62,20 @@ func main() {
 
 	server := new(httpserver.Server)
 
+	// Глобальный middleware для установки заголовков CORS
+	router.Use(func(c *gin.Context) {
+		//c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		// c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		// c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(200)
+			return
+		}
+
+		c.Next()
+	})
+
 	go func() {
 		if err := server.Run(cfg.Server.Port, router); err != nil {
 			log.Fatal("failed running server %v", err)
